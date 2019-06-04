@@ -1,14 +1,8 @@
 #include "LOLIN_HP303B.h"
 
-
-
-const int32_t LOLIN_HP303B::scaling_facts[HP303B__NUM_OF_SCAL_FACTS]
-	= {524288, 1572864, 3670016, 7864320, 253952, 516096, 1040384, 2088960};
-
-
+const int32_t LOLIN_HP303B::scaling_facts[HP303B__NUM_OF_SCAL_FACTS] = { 524288, 1572864, 3670016, 7864320, 253952, 516096, 1040384, 2088960 };
 
 //////// 		Constructor, Destructor, begin, end			////////
-
 
 /**
  * Standard Constructor
@@ -16,7 +10,7 @@ const int32_t LOLIN_HP303B::scaling_facts[HP303B__NUM_OF_SCAL_FACTS]
 LOLIN_HP303B::LOLIN_HP303B(void)
 {
 	//assume that initialization has failed before it has been done
-	m_initFail = 1U;
+	m_initFail = true;
 }
 
 /**
@@ -27,37 +21,46 @@ LOLIN_HP303B::~LOLIN_HP303B(void)
 	end();
 }
 
-
-
 /**
  * Standard I2C begin function
  *
  * &bus: 			I2CBus which connects MC to HP303B
  * slaveAddress: 	Address of the HP303B (0x77 or 0x76)
  */
+#ifndef  I2CDEV_IMPLEMENTATION
 void LOLIN_HP303B::begin(TwoWire &bus, uint8_t slaveAddress)
+#else
+void LOLIN_HP303B::begin(uint8_t slaveAddress)
+#endif
 {
 	//this flag will show if the initialization was successful
-	m_initFail = 0U;
+	m_initFail = false;
 
 	//Set I2C bus connection
-	m_SpiI2c = 1U;
+	m_SpiI2c = I2CBus;
+#ifndef  I2CDEV_IMPLEMENTATION
 	m_i2cbus = &bus;
+#endif
 	m_slaveAddress = slaveAddress;
 
 	// Init bus
+#ifndef  I2CDEV_IMPLEMENTATION
 	m_i2cbus->begin();
+#endif
 
+#ifndef  I2CDEV_IMPLEMENTATION
 	delay(50);		//startup time of HP303B
+#endif
 
 	init();
 }
 
+#ifndef  I2CDEV_IMPLEMENTATION
 void LOLIN_HP303B::begin(uint8_t slaveAddress)
 {
 	begin(Wire,slaveAddress);
 }
-
+#endif
 /**
  * SPI begin function for HP303B with 4-wire SPI
  */
@@ -80,7 +83,7 @@ void LOLIN_HP303B::begin(SPIClass &bus, int32_t chipSelect, uint8_t threeWire)
 	m_initFail = 0U;
 
 	//Set SPI bus connection
-	m_SpiI2c = 0U;
+	m_SpiI2c = SPIBus;
 	m_spibus = &bus;
 	m_chipSelect = chipSelect;
 
@@ -96,11 +99,9 @@ void LOLIN_HP303B::begin(SPIClass &bus, int32_t chipSelect, uint8_t threeWire)
 	//switch to 3-wire mode if necessary
 	//do not use writeByteBitfield or check option to set SPI mode!
 	//Reading is not possible until SPI-mode is valid
-	if(threeWire)
-	{
+	if (threeWire) {
 		m_threeWire = 1U;
-		if(writeByte(HP303B__REG_ADR_SPI3W, HP303B__REG_CONTENT_SPI3W))
-		{
+		if (writeByte(HP303B__REG_ADR_SPI3W, HP303B__REG_CONTENT_SPI3W)) {
 			m_initFail = 1U;
 			return;
 		}
@@ -118,9 +119,7 @@ void LOLIN_HP303B::end(void)
 	standby();
 }
 
-
 ////////		Declaration of other public functions starts here			////////
-
 
 /**
  * returns the Product ID of the connected HP303B sensor
@@ -148,27 +147,23 @@ uint8_t LOLIN_HP303B::getRevisionId(void)
 int16_t LOLIN_HP303B::standby(void)
 {
 	//abort if initialization failed
-	if(m_initFail)
-	{
+	if (m_initFail) {
 		return HP303B__FAIL_INIT_FAILED;
 	}
 	//set device to idling mode
 	int16_t ret = setOpMode(IDLE);
-	if(ret != HP303B__SUCCEEDED)
-	{
+	if (ret != HP303B__SUCCEEDED) {
 		return ret;
 	}
 	//flush the FIFO
 	ret = writeByteBitfield(1U, HP303B__REG_INFO_FIFO_FL);
-	if(ret < 0)
-	{
+	if (ret < 0) {
 		return ret;
 	}
 	//disable the FIFO
 	ret = writeByteBitfield(0U, HP303B__REG_INFO_FIFO_EN);
 	return ret;
 }
-
 
 /**
  * performs one temperature measurement and writes result to the given address
@@ -181,7 +176,7 @@ int16_t LOLIN_HP303B::standby(void)
  * 				-2 if the object initialization failed
  * 				-1 on other fail
  */
-int16_t LOLIN_HP303B::measureTempOnce(int32_t &result)
+int16_t LOLIN_HP303B::measureTempOnce(float &result)
 {
 	return measureTempOnce(result, m_tempOsr);
 }
@@ -202,22 +197,20 @@ int16_t LOLIN_HP303B::measureTempOnce(int32_t &result)
  * 						-2 if the object initialization failed
  * 						-1 on other fail
  */
-int16_t LOLIN_HP303B::measureTempOnce(int32_t &result, uint8_t oversamplingRate)
+int16_t LOLIN_HP303B::measureTempOnce(float &result, uint8_t oversamplingRate)
 {
 	//Start measurement
 	int16_t ret = startMeasureTempOnce(oversamplingRate);
-	if(ret!=HP303B__SUCCEEDED)
-	{
+	if (ret != HP303B__SUCCEEDED) {
 		return ret;
 	}
 
 	//wait until measurement is finished
-	delay(calcBusyTime(0U, m_tempOsr)/HP303B__BUSYTIME_SCALING);
+	delay(calcBusyTime(0U, m_tempOsr) / HP303B__BUSYTIME_SCALING);
 	delay(HP303B__BUSYTIME_FAILSAFE);
 
 	ret = getSingleResult(result);
-	if(ret!=HP303B__SUCCEEDED)
-	{
+	if (ret != HP303B__SUCCEEDED) {
 		standby();
 	}
 	return ret;
@@ -252,21 +245,17 @@ int16_t LOLIN_HP303B::startMeasureTempOnce(void)
 int16_t LOLIN_HP303B::startMeasureTempOnce(uint8_t oversamplingRate)
 {
 	//abort if initialization failed
-	if(m_initFail)
-	{
+	if (m_initFail) {
 		return HP303B__FAIL_INIT_FAILED;
 	}
 	//abort if device is not in idling mode
-	if(m_opMode!=IDLE)
-	{
+	if (m_opMode != IDLE) {
 		return HP303B__FAIL_TOOBUSY;
 	}
 
-	if(oversamplingRate!=m_tempOsr)
-	{
+	if (oversamplingRate != m_tempOsr) {
 		//configuration of oversampling rate
-		if(configTemp(0U, oversamplingRate) != HP303B__SUCCEEDED)
-		{
+		if (configTemp(0U, oversamplingRate) != HP303B__SUCCEEDED) {
 			return HP303B__FAIL_UNKNOWN;
 		}
 	}
@@ -286,7 +275,7 @@ int16_t LOLIN_HP303B::startMeasureTempOnce(uint8_t oversamplingRate)
  * 				-2 if the object initialization failed
  * 				-1 on other fail
  */
-int16_t LOLIN_HP303B::measurePressureOnce(int32_t &result)
+int16_t LOLIN_HP303B::measurePressureOnce(float &result)
 {
 	return measurePressureOnce(result, m_prsOsr);
 }
@@ -307,22 +296,20 @@ int16_t LOLIN_HP303B::measurePressureOnce(int32_t &result)
  * 						-2 if the object initialization failed
  * 						-1 on other fail
  */
-int16_t LOLIN_HP303B::measurePressureOnce(int32_t &result, uint8_t oversamplingRate)
+int16_t LOLIN_HP303B::measurePressureOnce(float &result, uint8_t oversamplingRate)
 {
 	//start the measurement
 	int16_t ret = startMeasurePressureOnce(oversamplingRate);
-	if(ret != HP303B__SUCCEEDED)
-	{
+	if (ret != HP303B__SUCCEEDED) {
 		return ret;
 	}
 
 	//wait until measurement is finished
-	delay(calcBusyTime(0U, m_prsOsr)/HP303B__BUSYTIME_SCALING);
+	delay(calcBusyTime(0U, m_prsOsr) / HP303B__BUSYTIME_SCALING);
 	delay(HP303B__BUSYTIME_FAILSAFE);
 
 	ret = getSingleResult(result);
-	if(ret!=HP303B__SUCCEEDED)
-	{
+	if (ret != HP303B__SUCCEEDED) {
 		standby();
 	}
 	return ret;
@@ -357,20 +344,16 @@ int16_t LOLIN_HP303B::startMeasurePressureOnce(void)
 int16_t LOLIN_HP303B::startMeasurePressureOnce(uint8_t oversamplingRate)
 {
 	//abort if initialization failed
-	if(m_initFail)
-	{
+	if (m_initFail) {
 		return HP303B__FAIL_INIT_FAILED;
 	}
 	//abort if device is not in idling mode
-	if(m_opMode != IDLE)
-	{
+	if (m_opMode != IDLE) {
 		return HP303B__FAIL_TOOBUSY;
 	}
 	//configuration of oversampling rate, lowest measure rate to avoid conflicts
-	if(oversamplingRate != m_prsOsr)
-	{
-		if(configPressure(0U, oversamplingRate))
-		{
+	if (oversamplingRate != m_prsOsr) {
+		if (configPressure(0U, oversamplingRate)) {
 			return HP303B__FAIL_UNKNOWN;
 		}
 	}
@@ -388,47 +371,43 @@ int16_t LOLIN_HP303B::startMeasurePressureOnce(uint8_t oversamplingRate)
  * 				-2 if the object initialization failed
  * 				-1 on other fail
  */
-int16_t LOLIN_HP303B::getSingleResult(int32_t &result)
+int16_t LOLIN_HP303B::getSingleResult(float &result)
 {
 	//abort if initialization failed
-	if(m_initFail)
-	{
+	if (m_initFail) {
 		return HP303B__FAIL_INIT_FAILED;
 	}
 
 	//read finished bit for current opMode
 	int16_t rdy;
-	switch(m_opMode)
-	{
-	case CMD_TEMP: 	//temperature
-		rdy = readByteBitfield(HP303B__REG_INFO_TEMP_RDY);
-		break;
-	case CMD_PRS: 	//pressure
-		rdy = readByteBitfield(HP303B__REG_INFO_PRS_RDY);
-		break;
-	default: 	//HP303B not in command mode
-		return HP303B__FAIL_TOOBUSY;
+	switch (m_opMode) {
+		case CMD_TEMP: 	//temperature
+			rdy = readByteBitfield(HP303B__REG_INFO_TEMP_RDY);
+			break;
+		case CMD_PRS: 	//pressure
+			rdy = readByteBitfield(HP303B__REG_INFO_PRS_RDY);
+			break;
+		default: 	//HP303B not in command mode
+			return HP303B__FAIL_TOOBUSY;
 	}
 
 	//read new measurement result
-	switch(rdy)
-	{
-	case HP303B__FAIL_UNKNOWN: 	//could not read ready flag
-		return HP303B__FAIL_UNKNOWN;
-	case 0: 						//ready flag not set, measurement still in progress
-		return HP303B__FAIL_UNFINISHED;
-	case 1: 						//measurement ready, expected case
-		LOLIN_HP303B::Mode oldMode = m_opMode;
-		m_opMode = IDLE;				//opcode was automatically reseted by HP303B
-		switch(oldMode)
-		{
-		case CMD_TEMP: 	//temperature
-			return getTemp(&result);		//get and calculate the temperature value
-		case CMD_PRS: 	//pressure
-			return getPressure(&result);	//get and calculate the pressure value
-		default:
-			return HP303B__FAIL_UNKNOWN;	//should already be filtered above
-		}
+	switch (rdy) {
+		case HP303B__FAIL_UNKNOWN: 	//could not read ready flag
+			return HP303B__FAIL_UNKNOWN;
+		case 0: 						//ready flag not set, measurement still in progress
+			return HP303B__FAIL_UNFINISHED;
+		case 1: 						//measurement ready, expected case
+			LOLIN_HP303B::Mode oldMode = m_opMode;
+			m_opMode = IDLE;				//opcode was automatically reseted by HP303B
+			switch (oldMode) {
+				case CMD_TEMP: 	//temperature
+					return getTemp(result);		//get and calculate the temperature value
+				case CMD_PRS: 	//pressure
+					return getPressure(result);	//get and calculate the pressure value
+				default:
+					return HP303B__FAIL_UNKNOWN;	//should already be filtered above
+			}
 	}
 	return HP303B__FAIL_UNKNOWN;
 }
@@ -461,38 +440,31 @@ int16_t LOLIN_HP303B::getSingleResult(int32_t &result)
 int16_t LOLIN_HP303B::startMeasureTempCont(uint8_t measureRate, uint8_t oversamplingRate)
 {
 	//abort if initialization failed
-	if(m_initFail)
-	{
+	if (m_initFail) {
 		return HP303B__FAIL_INIT_FAILED;
 	}
 	//abort if device is not in idling mode
-	if(m_opMode != IDLE)
-	{
+	if (m_opMode != IDLE) {
 		return HP303B__FAIL_TOOBUSY;
 	}
 	//abort if speed and precision are too high
-	if(calcBusyTime(measureRate, oversamplingRate) >= HP303B__MAX_BUSYTIME)
-	{
+	if (calcBusyTime(measureRate, oversamplingRate) >= HP303B__MAX_BUSYTIME) {
 		return HP303B__FAIL_UNFINISHED;
 	}
 	//update precision and measuring rate
-	if(configTemp(measureRate, oversamplingRate))
-	{
+	if (configTemp(measureRate, oversamplingRate)) {
 		return HP303B__FAIL_UNKNOWN;
 	}
 	//enable result FIFO
-	if(writeByteBitfield(1U, HP303B__REG_INFO_FIFO_EN))
-	{
+	if (writeByteBitfield(1U, HP303B__REG_INFO_FIFO_EN)) {
 		return HP303B__FAIL_UNKNOWN;
 	}
 	//Start measuring in background mode
-	if(setOpMode(1U, 1U, 0U))
-	{
+	if (setOpMode(1U, 1U, 0U)) {
 		return HP303B__FAIL_UNKNOWN;
 	}
 	return HP303B__SUCCEEDED;
 }
-
 
 /**
  * starts a continuous temperature measurement
@@ -522,31 +494,25 @@ int16_t LOLIN_HP303B::startMeasureTempCont(uint8_t measureRate, uint8_t oversamp
 int16_t LOLIN_HP303B::startMeasurePressureCont(uint8_t measureRate, uint8_t oversamplingRate)
 {
 	//abort if initialization failed
-	if(m_initFail)
-	{
+	if (m_initFail) {
 		return HP303B__FAIL_INIT_FAILED;
 	}
 	//abort if device is not in idling mode
-	if(m_opMode != IDLE)
-	{
+	if (m_opMode != IDLE) {
 		return HP303B__FAIL_TOOBUSY;
 	}
 	//abort if speed and precision are too high
-	if(calcBusyTime(measureRate, oversamplingRate) >= HP303B__MAX_BUSYTIME)
-	{
+	if (calcBusyTime(measureRate, oversamplingRate) >= HP303B__MAX_BUSYTIME) {
 		return HP303B__FAIL_UNFINISHED;
 	}
 	//update precision and measuring rate
-	if(configPressure(measureRate, oversamplingRate))
-		return HP303B__FAIL_UNKNOWN;
+	if (configPressure(measureRate, oversamplingRate)) return HP303B__FAIL_UNKNOWN;
 	//enable result FIFO
-	if(writeByteBitfield(1U, HP303B__REG_INFO_FIFO_EN))
-	{
+	if (writeByteBitfield(1U, HP303B__REG_INFO_FIFO_EN)) {
 		return HP303B__FAIL_UNKNOWN;
 	}
 	//Start measuring in background mode
-	if(setOpMode(1U, 0U, 1U))
-	{
+	if (setOpMode(1U, 0U, 1U)) {
 		return HP303B__FAIL_UNKNOWN;
 	}
 	return HP303B__SUCCEEDED;
@@ -573,42 +539,32 @@ int16_t LOLIN_HP303B::startMeasurePressureCont(uint8_t measureRate, uint8_t over
  * 						This sum must not be more than 1 second.
  * 						Consult the datasheet for more information.
  */
-int16_t LOLIN_HP303B::startMeasureBothCont(uint8_t tempMr,
-										 uint8_t tempOsr,
-										 uint8_t prsMr,
-										 uint8_t prsOsr)
+int16_t LOLIN_HP303B::startMeasureBothCont(uint8_t tempMr, uint8_t tempOsr, uint8_t prsMr, uint8_t prsOsr)
 {
 	//abort if initialization failed
-	if(m_initFail)
-	{
+	if (m_initFail) {
 		return HP303B__FAIL_INIT_FAILED;
 	}
 	//abort if device is not in idling mode
-	if(m_opMode!=IDLE)
-	{
+	if (m_opMode != IDLE) {
 		return HP303B__FAIL_TOOBUSY;
 	}
 	//abort if speed and precision are too high
-	if(calcBusyTime(tempMr, tempOsr) + calcBusyTime(prsMr, prsOsr)>=HP303B__MAX_BUSYTIME)
-	{
+	if (calcBusyTime(tempMr, tempOsr) + calcBusyTime(prsMr, prsOsr) >= HP303B__MAX_BUSYTIME) {
 		return HP303B__FAIL_UNFINISHED;
 	}
 	//update precision and measuring rate
-	if(configTemp(tempMr, tempOsr))
-	{
+	if (configTemp(tempMr, tempOsr)) {
 		return HP303B__FAIL_UNKNOWN;
 	}
 	//update precision and measuring rate
-	if(configPressure(prsMr, prsOsr))
-		return HP303B__FAIL_UNKNOWN;
+	if (configPressure(prsMr, prsOsr)) return HP303B__FAIL_UNKNOWN;
 	//enable result FIFO
-	if(writeByteBitfield(1U, HP303B__REG_INFO_FIFO_EN))
-	{
+	if (writeByteBitfield(1U, HP303B__REG_INFO_FIFO_EN)) {
 		return HP303B__FAIL_UNKNOWN;
 	}
 	//Start measuring in background mode
-	if(setOpMode(1U, 1U, 1U))
-	{
+	if (setOpMode(1U, 1U, 1U)) {
 		return HP303B__FAIL_UNKNOWN;
 	}
 	return HP303B__SUCCEEDED;
@@ -636,66 +592,55 @@ int16_t LOLIN_HP303B::startMeasureBothCont(uint8_t tempMr,
  * 					-2 if the object initialization failed
  * 					-1 on other fail
  */
-int16_t LOLIN_HP303B::getContResults(int32_t *tempBuffer,
-								   uint8_t &tempCount,
-								   int32_t *prsBuffer,
-								   uint8_t &prsCount)
+int16_t LOLIN_HP303B::getContResults(int32_t *tempBuffer, uint8_t &tempCount, int32_t *prsBuffer, uint8_t &prsCount)
 {
-	if(m_initFail)
-	{
+	if (m_initFail) {
 		return HP303B__FAIL_INIT_FAILED;
 	}
 	//abort if device is not in background mode
-	if(!(m_opMode & INVAL_OP_CONT_NONE))
-	{
+	if (!(m_opMode & INVAL_OP_CONT_NONE)) {
 		return HP303B__FAIL_TOOBUSY;
 	}
 
 	//prepare parameters for buffer length and count
 	uint8_t tempLen = tempCount;
 	uint8_t prsLen = prsCount;
-	tempCount = 0U;
-	prsCount = 0U;
+	tempCount = 0;
+	prsCount = 0;
 
 	//while FIFO is not empty
-	while(readByteBitfield(HP303B__REG_INFO_FIFO_EMPTY) == 0)
-	{
+	while (readByteBitfield(HP303B__REG_INFO_FIFO_EMPTY) == 0) {
 		int32_t result;
 		//read next result from FIFO
 		int16_t type = getFIFOvalue(&result);
-		switch(type)
-		{
-		case 0: //temperature
-			//calculate compensated pressure value
-			result = calcTemp(result);
-			//if buffer exists and is not full
-			//write result to buffer and increase temperature result counter
-			if(tempBuffer != NULL)
-			{
-				if(tempCount<tempLen)
-				{
-					tempBuffer[tempCount++] = result;
+		switch (type) {
+			case 0: //temperature
+				//calculate compensated pressure value
+				result = calcTemp(result);
+				//if buffer exists and is not full
+				//write result to buffer and increase temperature result counter
+				if (tempBuffer != NULL) {
+					if (tempCount < tempLen) {
+						tempBuffer[tempCount++ ] = result;
+					}
 				}
-			}
-			break;
-		case 1: //pressure
-			//calculate compensated pressure value
-			result = calcPressure(result);
-			//if buffer exists and is not full
-			//write result to buffer and increase pressure result counter
-			if(prsBuffer != NULL)
-			{
-				if(prsCount<prsLen)
-				{
-					prsBuffer[prsCount++] = result;
+				break;
+			case 1: //pressure
+				//calculate compensated pressure value
+				result = calcPressure(result);
+				//if buffer exists and is not full
+				//write result to buffer and increase pressure result counter
+				if (prsBuffer != NULL) {
+					if (prsCount < prsLen) {
+						prsBuffer[prsCount++ ] = result;
+					}
 				}
-			}
-			break;
-		case -1: //read failed
-			break;	//continue while loop
-					//if connection failed permanently,
-					//while condition will become false
-					//if read failed only once, loop will try again
+				break;
+			case -1: //read failed
+				break;	//continue while loop
+						//if connection failed permanently,
+						//while condition will become false
+						//if read failed only once, loop will try again
 		}
 	}
 	return HP303B__SUCCEEDED;
@@ -712,8 +657,7 @@ int16_t LOLIN_HP303B::getContResults(int32_t *tempBuffer,
 int16_t LOLIN_HP303B::setInterruptPolarity(uint8_t polarity)
 {
 	//Interrupts are not supported with 4 Wire SPI
-	if(!m_SpiI2c & !m_threeWire)
-	{
+	if (!m_SpiI2c & !m_threeWire) {
 		return HP303B__FAIL_UNKNOWN;
 	}
 	return writeByteBitfield(polarity, HP303B__REG_INFO_INT_HL);
@@ -738,8 +682,7 @@ int16_t LOLIN_HP303B::setInterruptPolarity(uint8_t polarity)
 int16_t LOLIN_HP303B::setInterruptSources(uint8_t fifoFull, uint8_t tempReady, uint8_t prsReady)
 {
 	//Interrupts are not supported with 4 Wire SPI
-	if(!m_SpiI2c & !m_threeWire)
-	{
+	if (!m_SpiI2c & !m_threeWire) {
 		return HP303B__FAIL_UNKNOWN;
 	}
 	//mask parameters
@@ -748,11 +691,10 @@ int16_t LOLIN_HP303B::setInterruptSources(uint8_t fifoFull, uint8_t tempReady, u
 	prsReady &= HP303B__REG_MASK_INT_EN_PRS >> HP303B__REG_SHIFT_INT_EN_PRS;
 	//read old value from register
 	int16_t regData = readByte(HP303B__REG_ADR_INT_EN_FIFO);
-	if(regData <0)
-	{
+	if (regData < 0) {
 		return HP303B__FAIL_UNKNOWN;
 	}
-	uint8_t toWrite = (uint8_t)regData;
+	uint8_t toWrite = (uint8_t) regData;
 	//update FIFO enable bit
 	toWrite &= ~HP303B__REG_MASK_INT_EN_FIFO;	//clear bit
 	toWrite |= fifoFull << HP303B__REG_SHIFT_INT_EN_FIFO;	//set new bit
@@ -811,8 +753,7 @@ int16_t LOLIN_HP303B::getIntStatusPrsReady(void)
  */
 int16_t LOLIN_HP303B::correctTemp(void)
 {
-	if(m_initFail)
-	{
+	if (m_initFail) {
 		return HP303B__FAIL_INIT_FAILED;
 	}
 	writeByte(0x0E, 0xA5);
@@ -820,20 +761,16 @@ int16_t LOLIN_HP303B::correctTemp(void)
 	writeByte(0x62, 0x02);
 	writeByte(0x0E, 0x00);
 	writeByte(0x0F, 0x00);
-	
-	//perform a first temperature measurement (again)
-	//the most recent temperature will be saved internally
-	//and used for compensation when calculating pressure
-	int32_t trash;
+
+	//perform a first temperature measurement
+	// used for compensation when calculating pressure
+	float trash;
 	measureTempOnce(trash);
-	
+
 	return HP303B__SUCCEEDED;
 }
 
-
-
 //////// 	Declaration of private functions starts here	////////
-
 
 /**
  * Initializes the sensor.
@@ -843,42 +780,36 @@ int16_t LOLIN_HP303B::correctTemp(void)
 void LOLIN_HP303B::init(void)
 {
 	int16_t prodId = readByteBitfield(HP303B__REG_INFO_PROD_ID);
-	if(prodId != HP303B__PROD_ID)
-	{
+	if (prodId != HP303B__PROD_ID) {
 		//Connected device is not a HP303B
-		m_initFail = 1U;
+		m_initFail = true;
 		return;
 	}
 	m_productID = prodId;
 
 	int16_t revId = readByteBitfield(HP303B__REG_INFO_REV_ID);
-	if(revId < 0)
-	{
-		m_initFail = 1U;
+	if (revId < 0) {
+		m_initFail = true;
 		return;
 	}
 	m_revisionID = revId;
 
 	//find out which temperature sensor is calibrated with coefficients...
 	int16_t sensor = readByteBitfield(HP303B__REG_INFO_TEMP_SENSORREC);
-	if(sensor < 0)
-	{
-		m_initFail = 1U;
+	if (sensor < 0) {
+		m_initFail = true;
 		return;
 	}
-
-	//...and use this sensor for temperature measurement
 	m_tempSensor = sensor;
-	if(writeByteBitfield((uint8_t)sensor, HP303B__REG_INFO_TEMP_SENSOR) < 0)
-	{
-		m_initFail = 1U;
+
+	if (writeByteBitfield((uint8_t) sensor, HP303B__REG_INFO_TEMP_SENSOR) < 0) {
+		m_initFail = true;
 		return;
 	}
 
 	//read coefficients
-	if(readcoeffs() < 0)
-	{
-		m_initFail = 1U;
+	if (readcoeffs() < 0) {
+		m_initFail = true;
 		return;
 	}
 
@@ -892,17 +823,16 @@ void LOLIN_HP303B::init(void)
 	//perform a first temperature measurement
 	//the most recent temperature will be saved internally
 	//and used for compensation when calculating pressure
-	int32_t trash;
-	measureTempOnce(trash);
-
-	//make sure the HP303B is in standby after initialization
-	standby();	
-
+	// float trash;
+	// measureTempOnce(trash);
+	//
 	// Fix IC with a fuse bit problem, which lead to a wrong temperature 
 	// Should not affect ICs without this problem
 	correctTemp();
-}
 
+	//make sure the HP303B is in standby after initialization
+	standby();
+}
 
 /**
  * reads the compensation coefficients from the HP303B
@@ -914,84 +844,46 @@ int16_t LOLIN_HP303B::readcoeffs(void)
 {
 	uint8_t buffer[HP303B__REG_LEN_COEF];
 	//read COEF registers to buffer
-	int16_t ret = readBlock(HP303B__REG_ADR_COEF,
-							HP303B__REG_LEN_COEF,
-							buffer);
+
+	int16_t ret = readBlock(HP303B__REG_ADR_COEF, HP303B__REG_LEN_COEF, buffer);
 	//abort if less than REG_LEN_COEF bytes were read
-	if(ret < HP303B__REG_LEN_COEF)
-	{
+	if (ret < HP303B__REG_LEN_COEF) {
 		return HP303B__FAIL_UNKNOWN;
 	}
 
 	//compose coefficients from buffer content
-	m_c0Half =    ((uint32_t)buffer[0] << 4)
-				| (((uint32_t)buffer[1] >> 4) & 0x0F);
+	m_c0Half = ((uint32_t) buffer[0] << 4) | (((uint32_t) buffer[1] >> 4) & 0x0F);
 	//this construction recognizes non-32-bit negative numbers
 	//and converts them to 32-bit negative numbers with 2's complement
-	if(m_c0Half & ((uint32_t)1 << 11))
-	{
-		m_c0Half -= (uint32_t)1 << 12;
-	}
+
+	if (m_c0Half & ((uint32_t) 1 << 11)) m_c0Half -= (uint32_t) 1 << 12;
 	//c0 is only used as c0*0.5, so c0_half is calculated immediately
-	m_c0Half = m_c0Half / 2U;
+	m_c0Half /= 2;
 
 	//now do the same thing for all other coefficients
-	m_c1 = (((uint32_t)buffer[1] & 0x0F) << 8) | (uint32_t)buffer[2];
-	if(m_c1 & ((uint32_t)1 << 11))
-	{
-		m_c1 -= (uint32_t)1 << 12;
-	}
+	m_c1 = (((uint32_t) buffer[1] & 0x0F) << 8) | (uint32_t) buffer[2];
+	if (m_c1 & ((uint32_t) 1 << 11)) m_c1 -= (uint32_t) 1 << 12;
 
-	m_c00 =   ((uint32_t)buffer[3] << 12)
-			| ((uint32_t)buffer[4] << 4)
-			| (((uint32_t)buffer[5] >> 4) & 0x0F);
-	if(m_c00 & ((uint32_t)1 << 19))
-	{
-		m_c00 -= (uint32_t)1 << 20;
-	}
+	m_c00 = ((uint32_t) buffer[3] << 12) | ((uint32_t) buffer[4] << 4) | (((uint32_t) buffer[5] >> 4) & 0x0F);
+	if (m_c00 & ((uint32_t) 1 << 19)) m_c00 -= (uint32_t) 1 << 20;
 
-	m_c10 =   (((uint32_t)buffer[5] & 0x0F) << 16)
-			| ((uint32_t)buffer[6] << 8)
-			| (uint32_t)buffer[7];
-	if(m_c10 & ((uint32_t)1<<19))
-	{
-		m_c10 -= (uint32_t)1 << 20;
-	}
+	m_c10 = (((uint32_t) buffer[5] & 0x0F) << 16) | ((uint32_t) buffer[6] << 8) | (uint32_t) buffer[7];
+	if (m_c10 & ((uint32_t) 1 << 19)) m_c10 -= (uint32_t) 1 << 20;
 
-	m_c01 =   ((uint32_t)buffer[8] << 8)
-			| (uint32_t)buffer[9];
-	if(m_c01 & ((uint32_t)1 << 15))
-	{
-		m_c01 -= (uint32_t)1 << 16;
-	}
+	m_c01 = ((uint32_t) buffer[8] << 8) | (uint32_t) buffer[9];
+	if (m_c01 & ((uint32_t) 1 << 15)) m_c01 -= (uint32_t) 1 << 16;
 
-	m_c11 =   ((uint32_t)buffer[10] << 8)
-			| (uint32_t)buffer[11];
-	if(m_c11 & ((uint32_t)1 << 15))
-	{
-		m_c11 -= (uint32_t)1 << 16;
-	}
+	m_c11 = ((uint32_t) buffer[10] << 8) | (uint32_t) buffer[11];
+	if (m_c11 & ((uint32_t) 1 << 15)) m_c11 -= (uint32_t) 1 << 16;
 
-	m_c20 =   ((uint32_t)buffer[12] << 8)
-			| (uint32_t)buffer[13];
-	if(m_c20 & ((uint32_t)1 << 15))
-	{
-		m_c20 -= (uint32_t)1 << 16;
-	}
+	m_c20 = ((uint32_t) buffer[12] << 8) | (uint32_t) buffer[13];
+	if (m_c20 & ((uint32_t) 1 << 15)) m_c20 -= (uint32_t) 1 << 16;
 
-	m_c21 =   ((uint32_t)buffer[14] << 8)
-			| (uint32_t)buffer[15];
-	if(m_c21 & ((uint32_t)1 << 15))
-	{
-		m_c21 -= (uint32_t)1 << 16;
-	}
+	m_c21 = ((uint32_t) buffer[14] << 8) | (uint32_t) buffer[15];
+	if (m_c21 & ((uint32_t) 1 << 15)) m_c21 -= (uint32_t) 1 << 16;
 
-	m_c30 =   ((uint32_t)buffer[16] << 8)
-			| (uint32_t)buffer[17];
-	if(m_c30 & ((uint32_t)1 << 15))
-	{
-		m_c30 -= (uint32_t)1 << 16;
-	}
+	m_c30 = ((uint32_t) buffer[16] << 8) | (uint32_t) buffer[17];
+	if (m_c30 & ((uint32_t) 1 << 15)) m_c30 -= (uint32_t) 1 << 16;
 
 	return HP303B__SUCCEEDED;
 }
@@ -1012,12 +904,9 @@ int16_t LOLIN_HP303B::readcoeffs(void)
  */
 int16_t LOLIN_HP303B::setOpMode(uint8_t background, uint8_t temperature, uint8_t pressure)
 {
-	uint8_t opMode =  (background & HP303B__LSB) << 2U
-					| (temperature & HP303B__LSB) << 1U
-					| (pressure & HP303B__LSB);
+	uint8_t opMode = (background & HP303B__LSB) << 2U | (temperature & HP303B__LSB) << 1U | (pressure & HP303B__LSB);
 	return setOpMode(opMode);
 }
-
 
 /**
  * Sets the Operation Mode of the HP303B
@@ -1034,16 +923,14 @@ int16_t LOLIN_HP303B::setOpMode(uint8_t opMode)
 	//Filter irrelevant bits
 	opMode &= HP303B__REG_MASK_OPMODE >> HP303B__REG_SHIFT_OPMODE;
 	//Filter invalid OpModes
-	if(opMode == INVAL_OP_CMD_BOTH || opMode == INVAL_OP_CONT_NONE)
-	{
+	if (opMode == INVAL_OP_CMD_BOTH || opMode == INVAL_OP_CONT_NONE) {
 		return HP303B__FAIL_UNKNOWN;
 	}
 	//Set OpMode
-	if(writeByte(HP303B__REG_ADR_OPMODE, opMode))
-	{
+	if (writeByte(HP303B__REG_ADR_OPMODE, opMode)) {
 		return HP303B__FAIL_UNKNOWN;
 	}
-	m_opMode = (LOLIN_HP303B::Mode)opMode;
+	m_opMode = (LOLIN_HP303B::Mode) opMode;
 	return HP303B__SUCCEEDED;
 }
 
@@ -1070,37 +957,24 @@ int16_t LOLIN_HP303B::configTemp(uint8_t tempMr, uint8_t tempOsr)
 	uint8_t toWrite = tempMr << HP303B__REG_SHIFT_TEMP_MR;
 	toWrite |= tempOsr << HP303B__REG_SHIFT_TEMP_OSR;
 	//using recommended temperature sensor
-	toWrite |=    HP303B__REG_MASK_TEMP_SENSOR
-				& (m_tempSensor << HP303B__REG_SHIFT_TEMP_SENSOR);
+	toWrite |= HP303B__REG_MASK_TEMP_SENSOR & (m_tempSensor << HP303B__REG_SHIFT_TEMP_SENSOR);
 	int16_t ret = writeByte(HP303B__REG_ADR_TEMP_MR, toWrite);
 	//abort immediately on fail
-	if(ret != HP303B__SUCCEEDED)
-	{
+	if (ret != HP303B__SUCCEEDED) {
 		return HP303B__FAIL_UNKNOWN;
 	}
 
 	//set TEMP SHIFT ENABLE if oversampling rate higher than eight(2^3)
-	if(tempOsr > HP303B__OSR_SE)
-	{
-		ret=writeByteBitfield(1U, HP303B__REG_INFO_TEMP_SE);
-	}
-	else
-	{
-		ret=writeByteBitfield(0U, HP303B__REG_INFO_TEMP_SE);
-	}
+	ret = writeByteBitfield((tempOsr > HP303B__OSR_SE) ? 1 : 0, HP303B__REG_INFO_TEMP_SE);
 
-	if(ret == HP303B__SUCCEEDED)
-	{	//save new settings
+	if (ret == HP303B__SUCCEEDED) {	//save new settings
 		m_tempMr = tempMr;
 		m_tempOsr = tempOsr;
-	}
-	else
-	{
+	} else {
 		//try to rollback on fail avoiding endless recursion
 		//this is to make sure that shift enable and oversampling rate
 		//are always consistent
-		if(tempMr != m_tempMr || tempOsr != m_tempOsr)
-		{
+		if (tempMr != m_tempMr || tempOsr != m_tempOsr) {
 			configTemp(m_tempMr, m_tempOsr);
 		}
 	}
@@ -1131,32 +1005,19 @@ int16_t LOLIN_HP303B::configPressure(uint8_t prsMr, uint8_t prsOsr)
 	toWrite |= prsOsr << HP303B__REG_SHIFT_PRS_OSR;
 	int16_t ret = writeByte(HP303B__REG_ADR_PRS_MR, toWrite);
 	//abort immediately on fail
-	if(ret != HP303B__SUCCEEDED)
-	{
-		return HP303B__FAIL_UNKNOWN;
-	}
+	if (ret != HP303B__SUCCEEDED) return HP303B__FAIL_UNKNOWN;
 
 	//set PM SHIFT ENABLE if oversampling rate higher than eight(2^3)
-	if(prsOsr > HP303B__OSR_SE)
-	{
-		ret = writeByteBitfield(1U, HP303B__REG_INFO_PRS_SE);
-	}
-	else
-	{
-		ret = writeByteBitfield(0U, HP303B__REG_INFO_PRS_SE);
-	}
 
-	if(ret == HP303B__SUCCEEDED)
-	{	//save new settings
+	ret = writeByteBitfield((prsOsr > HP303B__OSR_SE) ? 1 : 0, HP303B__REG_INFO_PRS_SE);
+
+	if (ret == HP303B__SUCCEEDED) {	//save new settings
 		m_prsMr = prsMr;
 		m_prsOsr = prsOsr;
-	}
-	else
-	{	//try to rollback on fail avoiding endless recursion
+	} else {	//try to rollback on fail avoiding endless recursion
 		//this is to make sure that shift enable and oversampling rate
 		//are always consistent
-		if(prsMr != m_prsMr || prsOsr != m_prsOsr)
-		{
+		if (prsMr != m_prsMr || prsOsr != m_prsOsr) {
 			configPressure(m_prsMr, m_prsOsr);
 		}
 	}
@@ -1182,7 +1043,7 @@ uint16_t LOLIN_HP303B::calcBusyTime(uint16_t mr, uint16_t osr)
 	mr &= HP303B__REG_MASK_TEMP_MR >> HP303B__REG_SHIFT_TEMP_MR;
 	osr &= HP303B__REG_MASK_TEMP_OSR >> HP303B__REG_SHIFT_TEMP_OSR;
 	//formula from datasheet (optimized)
-	return ((uint32_t)20U << mr) + ((uint32_t)16U << (osr + mr));
+	return ((uint32_t) 20U << mr) + ((uint32_t) 16U << (osr + mr));
 }
 
 /**
@@ -1192,33 +1053,24 @@ uint16_t LOLIN_HP303B::calcBusyTime(uint16_t mr, uint16_t osr)
  * returns:	0 on success
  * 			-1 on fail;
  */
-int16_t LOLIN_HP303B::getTemp(int32_t *result)
+int16_t LOLIN_HP303B::getTemp(float &result)
 {
-	uint8_t buffer[3] = {0};
+	uint8_t buffer[3] = { 0 };
 	//read raw pressure data to buffer
 
-	int16_t i = readBlock(HP303B__REG_ADR_TEMP,
-							HP303B__REG_LEN_TEMP,
-							buffer);
-	if(i != HP303B__REG_LEN_TEMP)
-	{
+	int16_t i = readBlock(HP303B__REG_ADR_TEMP, HP303B__REG_LEN_TEMP, buffer);
+	if (i != HP303B__REG_LEN_TEMP) {
 		//something went wrong
 		return HP303B__FAIL_UNKNOWN;
 	}
 
 	//compose raw temperature value from buffer
-	int32_t temp =    (uint32_t)buffer[0] << 16
-					| (uint32_t)buffer[1] << 8
-					| (uint32_t)buffer[2];
-	//recognize non-32-bit negative numbers
-	//and convert them to 32-bit negative numbers using 2's complement
-	if(temp & ((uint32_t)1 << 23))
-	{
-		temp -= (uint32_t)1 << 24;
-	}
+	int32_t temp = (uint32_t) buffer[0] << 16 | (uint32_t) buffer[1] << 8 | (uint32_t) buffer[2];
 
-	//return temperature
-	*result = calcTemp(temp);
+	//convert 2's complement
+	if (temp & ((uint32_t) 1 << 23))  temp -= (uint32_t) 1 << 24;
+
+	result = calcTemp(temp);
 	return HP303B__SUCCEEDED;
 }
 
@@ -1229,32 +1081,22 @@ int16_t LOLIN_HP303B::getTemp(int32_t *result)
  * returns: 0 on success
  * 			-1 on fail;
  */
-int16_t LOLIN_HP303B::getPressure(int32_t *result)
+int16_t LOLIN_HP303B::getPressure(float &result)
 {
-	uint8_t buffer[3] = {0};
+	uint8_t buffer[3] = { 0 };
 	//read raw pressure data to buffer
-	int16_t i = readBlock(HP303B__REG_ADR_PRS,
-							HP303B__REG_LEN_PRS,
-							buffer);
-	if(i != HP303B__REG_LEN_PRS)
-	{
+	int16_t i = readBlock(HP303B__REG_ADR_PRS, HP303B__REG_LEN_PRS, buffer);
+	if (i != HP303B__REG_LEN_PRS) {
 		//something went wrong
-		//negative pressure is not allowed
 		return HP303B__FAIL_UNKNOWN;
 	}
 
 	//compose raw pressure value from buffer
-	int32_t prs =   (uint32_t)buffer[0] << 16
-					| (uint32_t)buffer[1] << 8
-					| (uint32_t)buffer[2];
-	//recognize non-32-bit negative numbers
-	//and convert them to 32-bit negative numbers using 2's complement
-	if(prs & ((uint32_t)1 << 23))
-	{
-		prs -= (uint32_t)1 << 24;
-	}
+	int32_t prs = (uint32_t) buffer[0] << 16 | (uint32_t) buffer[1] << 8 | (uint32_t) buffer[2];
+	//convert  2's complement
+	if (prs & ((uint32_t) 1 << 23)) prs -= (uint32_t) 1 << 24;
 
-	*result = calcPressure(prs);
+	result = calcPressure(prs);
 	return HP303B__SUCCEEDED;
 }
 
@@ -1269,32 +1111,20 @@ int16_t LOLIN_HP303B::getPressure(int32_t *result)
 int16_t LOLIN_HP303B::getFIFOvalue(int32_t* value)
 {
 	//abort on invalid argument
-	if(value == NULL)
-	{
-		return HP303B__FAIL_UNKNOWN;
-	}
+	if (value == NULL) return HP303B__FAIL_UNKNOWN;
 
-	uint8_t buffer[HP303B__REG_LEN_PRS] = {0};
+	uint8_t buffer[HP303B__REG_LEN_PRS] = { 0 };
+
 	//always read from pressure raw value register
-	int16_t i = readBlock(HP303B__REG_ADR_PRS,
-							HP303B__REG_LEN_PRS,
-							buffer);
-	if(i != HP303B__REG_LEN_PRS)
-	{
-		//something went wrong
-		//return error code
-		return HP303B__FAIL_UNKNOWN;
-	}
+	int16_t i = readBlock(HP303B__REG_ADR_PRS, HP303B__REG_LEN_PRS, buffer);
+
+	if (i != HP303B__REG_LEN_PRS) return HP303B__FAIL_UNKNOWN;
+
 	//compose raw pressure value from buffer
-	*value =  (uint32_t)buffer[0] << 16
-			| (uint32_t)buffer[1] << 8
-			| (uint32_t)buffer[2];
-	//recognize non-32-bit negative numbers
-	//and convert them to 32-bit negative numbers using 2's complement
-	if(*value & ((uint32_t)1 << 23))
-	{
-		*value -= (uint32_t)1 << 24;
-	}
+	*value = (uint32_t) buffer[0] << 16 | (uint32_t) buffer[1] << 8 | (uint32_t) buffer[2];
+
+	//convert 2's complement
+	if (*value & ((uint32_t) 1 << 23)) *value -= (uint32_t) 1 << 24;
 
 	//least significant bit shows measurement type
 	return buffer[2] & HP303B__LSB;
@@ -1305,10 +1135,9 @@ int16_t LOLIN_HP303B::getFIFOvalue(int32_t* value)
  * raw: 	raw temperature value read from HP303B
  * returns: temperature value in °C
  */
-int32_t LOLIN_HP303B::calcTemp(int32_t raw)
+float LOLIN_HP303B::calcTemp(int32_t raw)
 {
 	double temp = raw;
-	
 	//scale temperature according to scaling table and oversampling
 	temp /= scaling_facts[m_tempOsr];
 
@@ -1320,7 +1149,7 @@ int32_t LOLIN_HP303B::calcTemp(int32_t raw)
 	temp = m_c0Half + m_c1 * temp;
 
 	//return temperature
-	return (int32_t)temp;
+	return temp;
 }
 
 /**
@@ -1328,7 +1157,7 @@ int32_t LOLIN_HP303B::calcTemp(int32_t raw)
  * raw: 	raw pressure value read from HP303B
  * returns: pressure value in Pa
  */
-int32_t LOLIN_HP303B::calcPressure(int32_t raw)
+float LOLIN_HP303B::calcPressure(int32_t raw)
 {
 	double prs = raw;
 
@@ -1336,12 +1165,10 @@ int32_t LOLIN_HP303B::calcPressure(int32_t raw)
 	prs /= scaling_facts[m_prsOsr];
 
 	//Calculate compensated pressure
-	prs =   m_c00
-			+ prs * (m_c10 + prs * (m_c20 + prs * m_c30))
-			+ m_lastTempScal * (m_c01 + prs * (m_c11 + prs * m_c21));
+	prs = m_c00 + prs * (m_c10 + prs * (m_c20 + prs * m_c30)) + m_lastTempScal * (m_c01 + prs * (m_c11 + prs * m_c21));
 
 	//return pressure
-	return (int32_t)prs;
+return (float) prs;
 }
 
 /**
@@ -1352,12 +1179,15 @@ int32_t LOLIN_HP303B::calcPressure(int32_t raw)
  */
 int16_t LOLIN_HP303B::readByte(uint8_t regAddress)
 {
-	//delegate to specialized function if HP303B is connected via SPI
-	if(m_SpiI2c==0)
-	{
-		return readByteSPI(regAddress);
-	}
-	
+//delegate to specialized function if HP303B is connected via SPI
+if (m_SpiI2c == SPIBus) return readByteSPI(regAddress);
+
+#ifdef  I2CDEV_IMPLEMENTATION
+uint8_t temp, res;
+if ((res = I2Cdev::readByte(m_slaveAddress, regAddress, &temp)) != 1) {
+	return HP303B__FAIL_UNKNOWN;	//if 0 bytes were read successfully
+} else return temp;
+#else
 	m_i2cbus->beginTransmission(m_slaveAddress);
 	m_i2cbus->write(regAddress);
     m_i2cbus->endTransmission(0);
@@ -1370,6 +1200,7 @@ int16_t LOLIN_HP303B::readByte(uint8_t regAddress)
 	{
 		return HP303B__FAIL_UNKNOWN;	//if 0 bytes were read successfully
 	}
+#endif
 }
 
 /**
@@ -1382,28 +1213,26 @@ int16_t LOLIN_HP303B::readByte(uint8_t regAddress)
  */
 int16_t LOLIN_HP303B::readByteSPI(uint8_t regAddress)
 {
-	//this function is only made for communication via SPI
-	if(m_SpiI2c != 0)
-	{
+//this function is only made for communication via SPI
+	if (m_SpiI2c != SPIBus) {
 		return HP303B__FAIL_UNKNOWN;
 	}
-	//mask regAddress
+//mask regAddress
 	regAddress &= ~HP303B__SPI_RW_MASK;
-	//reserve and initialize bus
+//reserve and initialize bus
 	m_spibus->beginTransaction(SPISettings(HP303B__SPI_MAX_FREQ,
-											MSBFIRST,
-											SPI_MODE3));
-	//enable ChipSelect for HP303B
+	MSBFIRST, SPI_MODE3));
+//enable ChipSelect for HP303B
 	digitalWrite(m_chipSelect, LOW);
-	//send address with read command to HP303B
+//send address with read command to HP303B
 	m_spibus->transfer(regAddress | HP303B__SPI_READ_CMD);
-	//receive register content from HP303B
+//receive register content from HP303B
 	uint8_t ret = m_spibus->transfer(0xFF);	//send a dummy byte while receiving
-	//disable ChipSelect for HP303B
+//disable ChipSelect for HP303B
 	digitalWrite(m_chipSelect, HIGH);
-	//close current SPI transaction
+//close current SPI transaction
 	m_spibus->endTransaction();
-	//return received data
+//return received data
 	return ret;
 }
 
@@ -1419,17 +1248,19 @@ int16_t LOLIN_HP303B::readByteSPI(uint8_t regAddress)
  */
 int16_t LOLIN_HP303B::readBlock(uint8_t regAddress, uint8_t length, uint8_t *buffer)
 {
-	//delegate to specialized function if HP303B is connected via SPI
-	if(m_SpiI2c == 0)
-	{
+//delegate to specialized function if HP303B is connected via SPI
+	if (m_SpiI2c == SPIBus) {
 		return readBlockSPI(regAddress, length, buffer);
 	}
-	//do not read if there is no buffer
-	if(buffer == NULL)
-	{
+//do not read if there is no buffer
+	if (buffer == NULL) {
 		return 0;	//0 bytes read successfully
 	}
-	
+#ifdef  I2CDEV_IMPLEMENTATION
+	uint8_t res;
+	if ((res = I2Cdev::readBytes(m_slaveAddress, regAddress, length, buffer)) == length) return res;
+	else return HP303B__FAIL_UNKNOWN;
+#else
 	m_i2cbus->beginTransmission(m_slaveAddress);
 	m_i2cbus->write(regAddress);
     m_i2cbus->endTransmission(0);
@@ -1441,6 +1272,7 @@ int16_t LOLIN_HP303B::readBlock(uint8_t regAddress, uint8_t length, uint8_t *buf
 		buffer[count] = m_i2cbus->read();
 	}
 	return ret;
+#endif
 }
 
 /**
@@ -1455,38 +1287,27 @@ int16_t LOLIN_HP303B::readBlock(uint8_t regAddress, uint8_t length, uint8_t *buf
  */
 int16_t LOLIN_HP303B::readBlockSPI(uint8_t regAddress, uint8_t length, uint8_t *buffer)
 {
-	//this function is only made for communication via SPI
-	if(m_SpiI2c != 0)
-	{
+//this function is only made for communication via SPI
+	if (m_SpiI2c != SPIBus) {
 		return HP303B__FAIL_UNKNOWN;
 	}
-	//do not read if there is no buffer
-	if(buffer == NULL)
-	{
+//do not read if there is no buffer
+	if (buffer == NULL) {
 		return 0;		//0 bytes were read successfully
 	}
-	//mask regAddress
-	regAddress &= ~HP303B__SPI_RW_MASK;
-	//reserve and initialize bus
-	m_spibus->beginTransaction(SPISettings(HP303B__SPI_MAX_FREQ,
-											MSBFIRST,
-											SPI_MODE3));
-	//enable ChipSelect for HP303B
-	digitalWrite(m_chipSelect, LOW);
-	//send address with read command to HP303B
-	m_spibus->transfer(regAddress | HP303B__SPI_READ_CMD);
+	regAddress &= ~HP303B__SPI_RW_MASK;							 //mask regAddress
+	m_spibus->beginTransaction(SPISettings(HP303B__SPI_MAX_FREQ, //reserve and initialize bus
+	MSBFIRST, SPI_MODE3));
+	digitalWrite(m_chipSelect, LOW); //enable ChipSelect for HP303B
+	m_spibus->transfer(regAddress | HP303B__SPI_READ_CMD); 		//send address with read command to HP303B
 
-	//receive register contents from HP303B
-	for(uint8_t count = 0; count < length; count++)
-	{
-		buffer[count] = m_spibus->transfer(0xFF);//send a dummy byte while receiving
+//receive register contents from HP303B
+	for (uint8_t count = 0; count < length; count++) {
+		buffer[count] = m_spibus->transfer(0xFF);				//send a dummy byte while receiving
 	}
 
-	//disable ChipSelect for HP303B
-	digitalWrite(m_chipSelect, HIGH);
-	//close current SPI transaction
+	digitalWrite(m_chipSelect, HIGH);					 		//disable ChipSelect for HP303B
 	m_spibus->endTransaction();
-	//return received data
 	return length;
 }
 
@@ -1500,7 +1321,7 @@ int16_t LOLIN_HP303B::readBlockSPI(uint8_t regAddress, uint8_t length, uint8_t *
  */
 int16_t LOLIN_HP303B::writeByte(uint8_t regAddress, uint8_t data)
 {
-	return writeByte(regAddress, data, 0U);
+return writeByte(regAddress, data, 0);
 }
 
 /**
@@ -1513,13 +1334,22 @@ int16_t LOLIN_HP303B::writeByte(uint8_t regAddress, uint8_t data)
  * return:		0 if byte was written successfully
  * 				or -1 on fail
  */
-int16_t LOLIN_HP303B::writeByte(uint8_t regAddress, uint8_t data, uint8_t check)
+int16_t LOLIN_HP303B::writeByte(uint8_t regAddress, uint8_t data, bool check)
 {
-	//delegate to specialized function if HP303B is connected via SPI
-	if(m_SpiI2c==0)
-	{
-		return writeByteSpi(regAddress, data, check);
+	if (m_SpiI2c == SPIBus)  return writeByteSpi(regAddress, data, check);
+
+#ifdef  I2CDEV_IMPLEMENTATION
+	uint8_t temp;
+	if (I2Cdev::writeByte(m_slaveAddress, regAddress, data) != 1) {
+		return HP303B__FAIL_UNKNOWN;
 	}
+
+	if (check) {
+		if ((I2Cdev::readByte(m_slaveAddress, regAddress, &temp) != 1) || (temp != data)) return HP303B__FAIL_UNKNOWN;
+	}
+	return HP303B__SUCCEEDED;
+
+#else
 	m_i2cbus->beginTransmission(m_slaveAddress);
 	m_i2cbus->write(regAddress);			//Write Register number to buffer
 	m_i2cbus->write(data);					//Write data to buffer
@@ -1539,6 +1369,7 @@ int16_t LOLIN_HP303B::writeByte(uint8_t regAddress, uint8_t data, uint8_t check)
 			return HP303B__FAIL_UNKNOWN;
 		}
 	}
+#endif
 }
 
 /**
@@ -1551,47 +1382,26 @@ int16_t LOLIN_HP303B::writeByte(uint8_t regAddress, uint8_t data, uint8_t check)
  * return:		0 if byte was written successfully
  * 				or -1 on fail
  */
-int16_t LOLIN_HP303B::writeByteSpi(uint8_t regAddress, uint8_t data, uint8_t check)
+int16_t LOLIN_HP303B::writeByteSpi(uint8_t regAddress, uint8_t data, bool check)
 {
-	//this function is only made for communication via SPI
-	if(m_SpiI2c != 0)
-	{
-		return HP303B__FAIL_UNKNOWN;
-	}
-	//mask regAddress
-	regAddress &= ~HP303B__SPI_RW_MASK;
-	//reserve and initialize bus
-	m_spibus->beginTransaction(SPISettings(HP303B__SPI_MAX_FREQ,
-											MSBFIRST,
-											SPI_MODE3));
-	//enable ChipSelect for HP303B
-	digitalWrite(m_chipSelect, LOW);
-	//send address with read command to HP303B
-	m_spibus->transfer(regAddress | HP303B__SPI_WRITE_CMD);
+//this function is only made for communication via SPI
+	if (m_SpiI2c != SPIBus) return HP303B__FAIL_UNKNOWN;
 
-	//write register content from HP303B
-	m_spibus->transfer(data);
+	regAddress &= ~HP303B__SPI_RW_MASK;			 //mask regAddress
+	m_spibus->beginTransaction(SPISettings(HP303B__SPI_MAX_FREQ, MSBFIRST, SPI_MODE3));
+	digitalWrite(m_chipSelect, LOW);						 //enable ChipSelect for HP303B
+	m_spibus->transfer(regAddress | HP303B__SPI_WRITE_CMD); //send address with read command to HP303B
+	m_spibus->transfer(data);					//write register content from HP303B
+	digitalWrite(m_chipSelect, HIGH);			//disable ChipSelect for HP303B
+	m_spibus->endTransaction(); 				//close current SPI transaction
 
-	//disable ChipSelect for HP303B
-	digitalWrite(m_chipSelect, HIGH);
-	//close current SPI transaction
-	m_spibus->endTransaction();
-
-	//check if necessary
-	if(check == 0)
-	{
-		//no checking necessary
+	if (!check) {					 			//no checking necessary
 		return HP303B__SUCCEEDED;
 	}
-	//checking necessary
-	if(readByte(regAddress) == data)
-	{
-		//check passed
+
+	if (readByte(regAddress) == data) { //check passed
 		return HP303B__SUCCEEDED;
-	}
-	else
-	{
-		//check failed
+	} else {
 		return HP303B__FAIL_UNKNOWN;
 	}
 }
@@ -1608,12 +1418,9 @@ int16_t LOLIN_HP303B::writeByteSpi(uint8_t regAddress, uint8_t data, uint8_t che
  * return:		0 if byte was written successfully
  * 				or -1 on fail
  */
-int16_t LOLIN_HP303B::writeByteBitfield(uint8_t data,
-										uint8_t regAddress,
-										uint8_t mask,
-										uint8_t shift)
+int16_t LOLIN_HP303B::writeByteBitfield(uint8_t data, uint8_t regAddress, uint8_t mask, uint8_t shift)
 {
-	return writeByteBitfield(data, regAddress, mask, shift, 0U);
+	return writeByteBitfield(data, regAddress, mask, shift, false);
 }
 
 /**
@@ -1631,19 +1438,15 @@ int16_t LOLIN_HP303B::writeByteBitfield(uint8_t data,
  * return:		0 if byte was written successfully
  * 				or -1 on fail
  */
-int16_t LOLIN_HP303B::writeByteBitfield(uint8_t data,
-										uint8_t regAddress,
-										uint8_t mask,
-										uint8_t shift,
-										uint8_t check)
+int16_t LOLIN_HP303B::writeByteBitfield(uint8_t data, uint8_t regAddress, uint8_t mask, uint8_t shift, bool check)
 {
 	int16_t old = readByte(regAddress);
-	if(old < 0)
-	{
+	if (old < 0) {
 		//fail while reading
 		return old;
 	}
-	return writeByte(regAddress, ((uint8_t)old & ~mask)|((data << shift) & mask), check);
+
+	return writeByte(regAddress, ((uint8_t) old & ~mask) | ((data << shift) & mask), check);
 }
 
 /**
@@ -1660,9 +1463,8 @@ int16_t LOLIN_HP303B::writeByteBitfield(uint8_t data,
 int16_t LOLIN_HP303B::readByteBitfield(uint8_t regAddress, uint8_t mask, uint8_t shift)
 {
 	int16_t ret = readByte(regAddress);
-	if(ret<0)
-	{
+	if (ret < 0) {
 		return ret;
 	}
-	return (((uint8_t)ret) & mask) >> shift;
+	return (((uint8_t) ret) & mask) >> shift;
 }
